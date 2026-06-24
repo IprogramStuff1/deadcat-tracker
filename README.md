@@ -3,7 +3,7 @@ A little tracking drone project.
 | Item | Link | Est. Price | Comments |
 | :--- | :--- | :--- | :--- |
 | [cite_start]Battery [cite: 1] | [SMC Racing](https://www.smc-racing.com/index.php?route=product/product&path=67_119&product_id=795) | ~$60.00 | [cite_start]SELECT THE XT 60 CONNECTOR OPTION [cite: 1] |
-| [cite_start]Charger/Adapter [cite: 2] | [Amazon (ISDT)](https://www.amazon.com/ISDT-Battery-Balance-Charger-Discharger/dp/B092J5LTBW) | ~$60.00 | [cite_start]OR This one (worse charging speed) [cite: 2] |
+| [cite_start]Charger/Adapter [cite: 2] | [Amazon (ISDT)](https://www.amazon.com/ISDT-Battery-Balance-Charger-Discharger/dp/B092J5LTBW) | ~$60.00 | [cite: 2] |
 | [cite_start]Propellers [cite: 3] | [Amazon (Gemfan)](https://www.amazon.com/Gemfan-Reinforced-Propellers-Cinelifter-Macroquad/dp/B0BWVCBNG2/ref=sims_dp_d_dex_ai_rank_model_1_d_v1_d_sccl_1_1/135-4759984-2049207?pd_rd_w=B8uuh&content-id=amzn1.sym.bb4a0aac-c2b4-4b4b-a0c8-9aa89b28dce3&pf_rd_p=bb4a0aac-c2b4-4b4b-a0c8-9aa89b28dce3&pf_rd_r=R0DS0M745SDB5X84ZQJM&pd_rd_wg=mG4yo&pd_rd_r=35670193-214e-4f5b-a0b3-25fcf82c1dcd&pd_rd_i=B0BWVCBNG2&th=1) | ~$15.00 | |
 | [cite_start]Radio Receiver [cite: 4] | [RadioMaster (RP1)](https://radiomasterrc.com/products/rp1-expresslrs-2-4ghz-nano-receiver) | ~$15.00 | |
 | [cite_start]Radio Controller [cite: 5] | [RadioMaster (Pocket)](https://radiomasterrc.com/products/pocket-radio-controller-m2?variant=46486346301632) | ~$65.00 | |
