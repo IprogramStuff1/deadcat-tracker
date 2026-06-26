@@ -1,4 +1,4 @@
-| Purchased | Num | Item | Link | Est. Price | Comments |
+| Received? | Num | Item | Link | Est. Price | Comments |
 | :---: | :---: | :--- | :--- | :--- | :--- |
 |  | 1 | Battery | [SMC Racing](https://www.smc-racing.com/index.php?route=product/product&path=67_119&product_id=795) | ~$60.00 | SELECT THE XT 60 CONNECTOR OPTION |
 |  | 2 | Charger/Adapter | [Amazon (ISDT)](https://www.amazon.com/ISDT-Battery-Balance-Charger-Discharger/dp/B092J5LTBW) | ~$60.00 | OR This one (worse charging speed) |
