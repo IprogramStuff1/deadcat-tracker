@@ -1,6 +1,6 @@
 import depthai as dai
 from depthai_nodes.node import ParsingNeuralNetwork
-import cv2 as cv
+import math
 
 # Standard COCO labels for YOLO models
 labels = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"]
@@ -61,5 +61,7 @@ with dai.Pipeline() as pipeline:
                 distance_z_meters = detection.spatialCoordinates.z / 1000.0 
                 distance_x_meters = detection.spatialCoordinates.x / 1000.0
                 distance_y_meters = detection.spatialCoordinates.y / 1000.0 # Positive is downwards and negative is upwards
-                
+                pan = math.degrees(math.atan2(distance_x_meters,distance_z_meters))
+                yaw = math.degrees(math.atan2(distance_y_meters,distance_z_meters))
+                print(f"Pan: {pan} | Yaw: {yaw}")
                 print(f"Detected: {label_name} | X: {distance_x_meters:.2f}m | Y: {distance_y_meters:.2f}m | Z: {distance_z_meters:.2f}m")
