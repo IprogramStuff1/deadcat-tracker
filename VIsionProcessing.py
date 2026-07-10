@@ -20,6 +20,8 @@ with dai.Pipeline() as pipeline:
     
     # Crucial step: Align the depth map to the RGB camera's perspective
     stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
+    #stereo.setExtendedDisparity(True) only for really close objects
+    stereo.setSubpixel(True) #good for far/medium range objects
     stereo.setOutputSize(640,400)
 
     # 3. The v3 Parsing Neural Network (Auto-handles YOLO decoding!)
@@ -61,7 +63,7 @@ with dai.Pipeline() as pipeline:
                 distance_z_meters = detection.spatialCoordinates.z / 1000.0 
                 distance_x_meters = detection.spatialCoordinates.x / 1000.0
                 distance_y_meters = detection.spatialCoordinates.y / 1000.0 # Positive is downwards and negative is upwards
-                pan = math.degrees(math.atan2(distance_x_meters,distance_z_meters))
-                yaw = math.degrees(math.atan2(distance_y_meters,distance_z_meters))
-                print(f"Pan: {pan} | Yaw: {yaw}")
+                yaw = math.degrees(math.atan2(distance_x_meters,distance_z_meters))
+                pitch = math.degrees(math.atan2(distance_y_meters,distance_z_meters))
+                print(f"Yaw: {yaw} | Pitch: {pitch}")
                 print(f"Detected: {label_name} | X: {distance_x_meters:.2f}m | Y: {distance_y_meters:.2f}m | Z: {distance_z_meters:.2f}m")
