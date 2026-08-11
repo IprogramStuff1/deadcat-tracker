@@ -66,7 +66,14 @@ with dai.Pipeline() as pipeline:
                 distance_y_meters = detection.spatialCoordinates.y / 1000.0 # Positive is downwards and negative is upwards
                 distance_vect = np.array([distance_x_meters,distance_y_meters,distance_z_meters])
                 mag_distance = np.linalg.norm(distance_vect)
-                yaw = math.degrees(math.atan2(distance_x_meters,distance_z_meters)) #required yaw
-                pitch = math.degrees(math.atan2(-distance_y_meters,distance_z_meters)) #required pitch up
-                print(f"Yaw: {yaw} | Pitch: {pitch}")
+                yaw = math.atan2(distance_x_meters,distance_z_meters) #required yaw
+                #pitch = math.degrees(math.atan2(-distance_y_meters,distance_z_meters)) #required pitch up, can be subbed with climb
+                print(f"Yaw: {yaw}")
                 print(f"Detected: {label_name} | X: {distance_x_meters:.2f}m | Y: {distance_y_meters:.2f}m | Z: {distance_z_meters:.2f}m")
+def camera_to_drone(standoff):
+    drone_x_error = distance_z_meters - standoff
+    drone_y_error = distance_x_meters
+    drone_z_error = distance_y_meters
+    drone_yaw_error = yaw
+    return drone_x_error, drone_y_error, drone_z_error, drone_yaw_error
+#todo: add in designated tracker algorithm here
