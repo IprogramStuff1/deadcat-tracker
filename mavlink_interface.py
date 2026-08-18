@@ -1,10 +1,16 @@
-import pymavlink as mv
+"""MAVLink transport for body-frame follow commands.
+
+This module intentionally does not arm the aircraft or change its flight mode.
+The pilot remains responsible for those actions and for having a working RC
+override/failsafe path.
+"""
+
+from __future__ import annotations
+
+import math
+import threading
+import time
+from typing import Any
+
 from pymavlink import mavutil
 
-link = mavutil.mavlink_connection(
-    "/dev/serial0",
-    baud=921600,
-    source_system=245,
-)
-
-link.wait_heartbeat(timeout=10)
