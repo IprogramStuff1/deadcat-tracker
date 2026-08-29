@@ -1,13 +1,16 @@
-#MANGO TUFF PYTHON CODE [anyone reading this ignore]
 from __future__ import annotations
 
 import math
-import threading
 import time
-from typing import Any
 
 from pymavlink import mavutil
 
+SERIAL_DEVICE = "/dev/serial0"
+SERIAL_BAUD = 57600
+SOURCE_SYSTEM_ID = 245
+
+FOLLOW_FRAME = mavutil.mavlink.MAV_FRAME_BODY_NED
+TYPE_MASK = 1479
 
 link = mavutil.mavlink_connection(
     "/dev/serial0",
