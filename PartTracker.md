@@ -3,7 +3,7 @@
 | Yes | 1 | Battery | [SMC Racing](https://www.smc-racing.com/index.php?route=product/product&path=67_119&product_id=795) | ~$60.00 | SELECT THE XT 60 CONNECTOR OPTION |
 | Yes | 2 | Charger/Adapter | [Amazon (ISDT)](https://www.amazon.com/ISDT-Battery-Balance-Charger-Discharger/dp/B092J5LTBW) | ~$60.00 | OR This one (worse charging speed) |
 | Yes | 3 | Propellers | [Amazon (Gemfan)](https://www.amazon.com/Gemfan-Reinforced-Propellers-Cinelifter-Macroquad/dp/B0BWVCBNG2/ref=sims_dp_d_dex_ai_rank_model_1_d_v1_d_sccl_1_1/135-4759984-2049207?pd_rd_w=B8uuh&content-id=amzn1.sym.bb4a0aac-c2b4-4b4b-a0c8-9aa89b28dce3&pf_rd_p=bb4a0aac-c2b4-4b4b-a0c8-9aa89b28dce3&pf_rd_r=R0DS0M745SDB5X84ZQJM&pd_rd_wg=mG4yo&pd_rd_r=35670193-214e-4f5b-a0b3-25fcf82c1dcd&pd_rd_i=B0BWVCBNG2&th=1) | ~$15.00 | |
-| Not Yet | 4 | Radio Receiver | [RadioMaster (RP1)](https://radiomasterrc.com/products/rp1-expresslrs-2-4ghz-nano-receiver) | ~$15.00 | |
+| Yes | 4 | Radio Receiver | [RadioMaster (RP1)](https://radiomasterrc.com/products/rp1-expresslrs-2-4ghz-nano-receiver) | ~$15.00 | |
 | Yes | 5 | Radio Controller | [RadioMaster (Pocket)](https://radiomasterrc.com/products/pocket-radio-controller-m2?variant=46486346301632) | ~$65.00 | |
 | Yes | 6 | Voltage Regulator (for Pi) | [Hobbywing (UBEC 5A)](https://www.hobbywingdirect.com/products/ubec-5a-air?srsltid=AfmBOop81lappAA_5THBwjE_cm2dZqI0QsUl387NxAwkJDiNYqutm8k6) | ~$10.00 | Check if fully needed |
 | Yes | 7 | OAK-D Lite | [Luxonis](https://shop.luxonis.com/products/oak-d-lite-1?srsltid=AfmBOorA31S2mCtIuQmpveBitkJtqkdyqK64eaGmfY-j8LkYBuXEU181) | ~$149.00 | |
