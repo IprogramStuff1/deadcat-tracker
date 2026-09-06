@@ -1,134 +1,243 @@
-import depthai as dai
-from depthai_nodes.node import ParsingNeuralNetwork
-import math
-import numpy as np
-from navigation import SimpleProportionalControl
+"""Person tracking and an explicitly opened, nonblocking OAK camera source."""
 
-# Standard COCO labels for YOLO models
-labels = ["person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "tv", "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"]
+from contextlib import ExitStack
+from dataclasses import dataclass
+import math
+import time
+
+
+PERSON_LABEL = 0  # COCO class used by the existing YOLO model.
+MODEL_SOURCE = "luxonis/yolov6-nano:r2-coco-512x288"
+
+
+@dataclass(frozen=True)
+class VisionSample:
+    """A camera observation; timestamp shares time.monotonic()'s clock domain.
+
+    A sample with no error vector means a frame arrived without a usable target.
+    No sample at all means the output queue has no new frame.
+    """
+
+    timestamp: float
+    error_vector: tuple[float, float, float, float] | None
+
+
+def _coordinates(relative_coords):
+    """Return finite millimetre coordinates, requiring a positive depth."""
+    try:
+        coords = tuple(float(getattr(relative_coords, axis)) for axis in ("x", "y", "z"))
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    if not all(math.isfinite(value) for value in coords) or coords[2] <= 0:
+        return None
+    return coords
+
+
 class DesignatedTracker:
-    __slots__ = ("label", "max_distance_squared", "max_missed", "missed", "position")
+    """Acquire by confidence, then associate the nearest same-class detection.
+
+    This is positional association, not person identification. Once enough frames
+    miss the target, acquisition stays disabled until an explicit reset/designation.
+    """
 
     def __init__(self, label=None, max_distance_meters=1.5, max_missed=10):
-        self.label = label
-        max_distance_mm = max_distance_meters * 1000.0
-        self.max_distance_squared = max_distance_mm * max_distance_mm
+        if not math.isfinite(max_distance_meters) or max_distance_meters <= 0:
+            raise ValueError("max_distance_meters must be finite and positive")
+        if not isinstance(max_missed, int) or max_missed < 1:
+            raise ValueError("max_missed must be a positive integer")
+        self._configured_label = label
+        self.max_distance_squared = (max_distance_meters * 1000.0) ** 2
         self.max_missed = max_missed
-        self.missed = 0
+        self.reset()
+
+    def reset(self):
+        """Forget the target and permit acquisition of the configured class."""
+        self.label = self._configured_label
         self.position = None
+        self.missed = 0
+        self.lost = False
 
     def designate(self, detection):
-        """Lock the tracker onto a detection selected by the caller."""
-        coordinates = detection.spatialCoordinates
+        """Explicitly lock onto a valid detection selected by the caller."""
+        coords = _coordinates(getattr(detection, "spatialCoordinates", None))
+        if coords is None:
+            raise ValueError("Cannot designate a detection without valid spatial coordinates")
+        if self._configured_label is not None and detection.label != self._configured_label:
+            raise ValueError("Detection does not match the configured target class")
         self.label = detection.label
-        self.position = (coordinates.x, coordinates.y, coordinates.z)
+        self.position = coords
         self.missed = 0
+        self.lost = False
         return detection
 
     def update(self, detections):
-        """Return the same target in a new frame, or None when it is not found."""
+        """Return a valid target, or None for a missing/invalid/latched-lost target."""
+        if self.lost:
+            return None
         best_detection = None
         best_distance_squared = self.max_distance_squared
-
-        if self.position is None:
-            best_confidence = -1.0
-            for detection in detections:
-                if self.label is not None and detection.label != self.label:
-                    continue
-                coordinates = detection.spatialCoordinates
-                if coordinates.z <= 0:
-                    continue
-                confidence = getattr(detection, "confidence", 0.0)
+        best_confidence = -1.0
+        for detection in detections:
+            if self.label is not None and detection.label != self.label:
+                continue
+            coords = _coordinates(getattr(detection, "spatialCoordinates", None))
+            try:
+                confidence = float(getattr(detection, "confidence", 0.0))
+            except (TypeError, ValueError, OverflowError):
+                continue
+            if coords is None or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                continue
+            if self.position is None:
                 if confidence > best_confidence:
                     best_confidence = confidence
                     best_detection = detection
-        else:
-            previous_x, previous_y, previous_z = self.position
-            for detection in detections:
-                if detection.label != self.label:
-                    continue
-                coordinates = detection.spatialCoordinates
-                if coordinates.z <= 0:
-                    continue
-                delta_x = coordinates.x - previous_x
-                delta_y = coordinates.y - previous_y
-                delta_z = coordinates.z - previous_z
-                distance_squared = (
-                    delta_x * delta_x + delta_y * delta_y + delta_z * delta_z
-                )
+            else:
+                deltas = (current - previous for current, previous in zip(coords, self.position))
+                distance_squared = sum(delta * delta for delta in deltas)
                 if distance_squared < best_distance_squared:
                     best_distance_squared = distance_squared
                     best_detection = detection
 
-        if best_detection is None:
+        if best_detection is not None:
+            return self.designate(best_detection)
+        # Do not latch loss before a target has ever been acquired.
+        if self.position is not None:
             self.missed += 1
-            if self.missed > self.max_missed:
-                self.position = None
-            return None
+            if self.missed >= self.max_missed:
+                self.lost = True
+        return None
 
-        return self.designate(best_detection)
-tracker = DesignatedTracker(label=labels.index("person"))
+
 def camera_to_drone(relative_coords, standoff):
-    drone_x_error = relative_coords.z / 1000.0 - standoff
-    drone_y_error = relative_coords.x / 1000.0
-    drone_z_error = relative_coords.y / 1000.0
-    drone_yaw_error = math.atan2(relative_coords.x, relative_coords.z)
-    return drone_x_error, drone_y_error, drone_z_error, drone_yaw_error
-with dai.Pipeline() as pipeline:
-    
-    # 1. Camera Node (v3 syntax automatically handles ISP scaling)
-    rgb_cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
-    
-    # 2. Stereo Depth Generation
-    stereo = pipeline.create(dai.node.StereoDepth)
-    monoLeft = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
-    monoRight = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
-    
-    monoLeft.requestOutput((640, 400)).link(stereo.left)
-    monoRight.requestOutput((640, 400)).link(stereo.right)
-    
-    # Crucial step: Align the depth map to the RGB camera's perspective
-    stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
-    #stereo.setExtendedDisparity(True) only for really close objects
-    stereo.setSubpixel(True) #good for far/medium range objects
-    stereo.setOutputSize(640,400)
+    """Convert camera right/down/forward mm into body forward/right/down metres.
 
-    # 3. The v3 Parsing Neural Network (Auto-handles YOLO decoding!)
-    nn = pipeline.create(ParsingNeuralNetwork).build(
-        rgb_cam, 
-        nnSource="luxonis/yolov6-nano:r2-coco-512x288", # Pulls directly from the Luxonis Hub
-        fps=30
-    )
+    Assumes the camera is mounted level and faces the aircraft's forward axis.
+    The fourth component is a right-positive yaw error in radians.
+    """
+    coords = _coordinates(relative_coords)
+    if coords is None:
+        raise ValueError("Camera coordinates must be finite with positive depth")
+    if not math.isfinite(standoff) or standoff < 0:
+        raise ValueError("standoff must be finite and nonnegative")
+    x, y, z = coords
+    return z / 1000.0 - standoff, x / 1000.0, y / 1000.0, math.atan2(x, z)
 
-    # 4. Spatial Location Calculator (slc) (v3 way to get X/Y/Z coords)
-    slc = pipeline.create(dai.node.SpatialLocationCalculator)
-    slc.setRunOnHost(True) # Run on host to avoid sending data back-and-forth to the camera
-    
-    # Link the parsed YOLO detections and the raw depth map into the calculator
-    nn.out.link(slc.inputDetections)
-    stereo.depth.link(slc.inputDepth)
 
-    # 5. Output Queue for our Spatial Detections
-    spatial_queue = slc.outputDetections.createOutputQueue()
+class VisionSource:
+    """Own the camera for a with-block; consume only the latest available frame.
 
-    # Start the pipeline
-    pipeline.start()
-    
-    device = pipeline.getDefaultDevice()
-    print(f"DeviceID: {device.getDeviceInfo().getDeviceId()}")
+    Hardware libraries, USB access and model loading occur only in __enter__.
+    One worker thread should own this object, including calls to reset_tracker().
+    """
 
-    while pipeline.isRunning():
-        
-        # Pull the spatial detections from the queue
-        in_det = spatial_queue.get()
-        
-        if in_det is not None:
-            tracked_object = tracker.update(in_det.detections)
-            if tracked_object is not None:
-                relative_coords = tracked_object.spatialCoordinates
-                
-                
-                #pitch = math.degrees(math.atan2(-distance_y_meters,distance_z_meters)) #required pitch up, can be subbed with climb
-               
-                error_vector = camera_to_drone(relative_coords=relative_coords, standoff=2.0)
-                forward_command, yaw_command = SimpleProportionalControl(error_vector=error_vector)
+    def __init__(self, standoff: float = 2.0):
+        if not math.isfinite(standoff) or standoff < 0:
+            raise ValueError("standoff must be finite and nonnegative")
+        self.standoff = standoff
+        self.tracker = DesignatedTracker(label=PERSON_LABEL)
+        self._stack = None
+        self._pipeline = None
+        self._queue = None
+        self._dai = None
+        self._reset_at = -math.inf
+        self._last_capture_time = -math.inf
+
+    def __enter__(self):
+        if self._stack is not None:
+            raise RuntimeError("VisionSource is already open")
+        try:
+            import depthai as dai
+            from depthai_nodes.node import ParsingNeuralNetwork
+        except ImportError as exc:
+            raise RuntimeError(
+                "The camera needs the existing DepthAI/depthai-nodes dependencies. "
+                "Activate the project environment and check its installation."
+            ) from exc
+
+        try:
+            with ExitStack() as stack:
+                pipeline = stack.enter_context(dai.Pipeline())
+                rgb_cam = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_A)
+                stereo = pipeline.create(dai.node.StereoDepth)
+                mono_left = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_B)
+                mono_right = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
+                mono_left.requestOutput((640, 400)).link(stereo.left)
+                mono_right.requestOutput((640, 400)).link(stereo.right)
+                stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
+                stereo.setLeftRightCheck(True)  # Required for RGB depth alignment on RVC2.
+                stereo.setSubpixel(True)
+                stereo.setOutputSize(640, 400)
+
+                nn = pipeline.create(ParsingNeuralNetwork).build(
+                    rgb_cam, nnSource=MODEL_SOURCE, fps=30
+                )
+                slc = pipeline.create(dai.node.SpatialLocationCalculator)
+                slc.setRunOnHost(True)
+                slc.inputConfig.setWaitForMessage(False)
+                # DepthAI v3 carries image transformations with detections and
+                # depth, so SLC maps their differing crop/output sizes itself.
+                nn.out.link(slc.inputDetections)
+                stereo.depth.link(slc.inputDepth)
+                spatial_queue = slc.outputDetections.createOutputQueue(maxSize=1, blocking=False)
+                pipeline.start()
+                if not pipeline.isRunning():
+                    raise RuntimeError("The camera pipeline stopped during startup")
+                self._pipeline = pipeline
+                self._queue = spatial_queue
+                self._dai = dai
+                self._stack = stack.pop_all()
+                self.reset_tracker()
+        except Exception as exc:
+            raise RuntimeError(
+                "Unable to start the OAK camera. Check its USB data connection, "
+                "power and Linux USB permissions; the model must be cached or "
+                f"downloadable on first startup. Details: {exc}"
+            ) from exc
+        return self
+
+    def reset_tracker(self):
+        """Permit a new target acquisition after the user enables following."""
+        self._reset_at = time.monotonic()
+        self._last_capture_time = -math.inf
+        self.tracker.reset()
+
+    def read_latest(self) -> VisionSample | None:
+        """Read without waiting for a frame; retain capture age for expiry checks."""
+        if self._pipeline is None:
+            raise RuntimeError("Open VisionSource using a with-block before reading")
+        if not self._pipeline.isRunning():
+            raise RuntimeError("OAK camera pipeline stopped; check its USB connection and power")
+        packet = self._queue.tryGet()
+        if packet is None:
+            return None
+        # getTimestamp() uses the host-synchronised DepthAI monotonic clock.
+        # Convert via age because its epoch need not equal Python's monotonic epoch.
+        now = time.monotonic()
+        try:
+            captured_at = packet.getTimestamp()
+            age = (self._dai.Clock.now() - captured_at).total_seconds()
+            capture_time = captured_at.total_seconds()
+        except (AttributeError, TypeError, ValueError, OverflowError) as exc:
+            raise RuntimeError("OAK frame has an invalid capture timestamp") from exc
+        timestamp = now - age
+        if not all(math.isfinite(value) for value in (age, capture_time, timestamp)) or age < 0:
+            raise RuntimeError("OAK frame has an invalid or future capture timestamp")
+        # Reject before association: a queued frame from the previous enable
+        # session must never designate the new session's person. Compare the
+        # original capture clock for ordering to avoid conversion-rounding jitter.
+        if timestamp < self._reset_at or capture_time <= self._last_capture_time:
+            return None
+        self._last_capture_time = capture_time
+        tracked_object = self.tracker.update(packet.detections)
+        error_vector = None
+        if tracked_object is not None:
+            error_vector = camera_to_drone(tracked_object.spatialCoordinates, self.standoff)
+        return VisionSample(timestamp=timestamp, error_vector=error_vector)
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        stack, self._stack = self._stack, None
+        self._pipeline = self._queue = self._dai = None
+        self.reset_tracker()
+        if stack is not None:
+            return stack.__exit__(exc_type, exc_value, traceback)
+        return False

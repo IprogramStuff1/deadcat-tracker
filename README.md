@@ -1,21 +1,120 @@
 # deadcat-tracker
 A little tracking drone project.
-| Item | Link | Est. Price | Comments |
-| :--- | :--- | :--- | :--- |
-| [cite_start]Battery [cite: 1] | [SMC Racing](https://www.smc-racing.com/index.php?route=product/product&path=67_119&product_id=795) | ~$60.00 | [cite_start]SELECT THE XT 60 CONNECTOR OPTION [cite: 1] |
-| [cite_start]Charger/Adapter [cite: 2] | [Amazon (ISDT)](https://www.amazon.com/ISDT-Battery-Balance-Charger-Discharger/dp/B092J5LTBW) | ~$60.00 | [cite: 2] |
-| [cite_start]Propellers [cite: 3] | [Amazon (Gemfan)](https://www.amazon.com/Gemfan-Reinforced-Propellers-Cinelifter-Macroquad/dp/B0BWVCBNG2/ref=sims_dp_d_dex_ai_rank_model_1_d_v1_d_sccl_1_1/135-4759984-2049207?pd_rd_w=B8uuh&content-id=amzn1.sym.bb4a0aac-c2b4-4b4b-a0c8-9aa89b28dce3&pf_rd_p=bb4a0aac-c2b4-4b4b-a0c8-9aa89b28dce3&pf_rd_r=R0DS0M745SDB5X84ZQJM&pd_rd_wg=mG4yo&pd_rd_r=35670193-214e-4f5b-a0b3-25fcf82c1dcd&pd_rd_i=B0BWVCBNG2&th=1) | ~$15.00 | |
-| [cite_start]Radio Receiver [cite: 4] | [RadioMaster (RP1)](https://radiomasterrc.com/products/rp1-expresslrs-2-4ghz-nano-receiver) | ~$15.00 | |
-| [cite_start]Radio Controller [cite: 5] | [RadioMaster (Pocket)](https://radiomasterrc.com/products/pocket-radio-controller-m2?variant=46486346301632) | ~$65.00 | |
-| [cite_start]Voltage Regulator (for Pi) [cite: 6] | [Hobbywing (UBEC 5A)](https://www.hobbywingdirect.com/products/ubec-5a-air?srsltid=AfmBOop81lappAA_5THBwjE_cm2dZqI0QsUl387NxAwkJDiNYqutm8k6) | ~$10.00 | [cite_start]Check if fully needed [cite: 6] |
-| [cite_start]OAK-D Lite [cite: 7] | [Luxonis](https://shop.luxonis.com/products/oak-d-lite-1?srsltid=AfmBOorA31S2mCtIuQmpveBitkJtqkdyqK64eaGmfY-j8LkYBuXEU181) | ~$149.00 | |
-| [cite_start]Pi Raspberry 5 8GB RAM [cite: 8] | [Vilros (Pi 5)](https://vilros.com/products/raspberry-pi-5?variant=40065551302750&src=raspberrypi) | ~$80.00 | |
-| [cite_start]Brushless Motor [cite: 9] | [EMAX USA (2808)](https://emax-usa.com/collections/28xx/products/e3-series-2808-brushless-motor-choose-kv) | ~$25.00/ea | [cite_start]4 needed [cite: 9] |
-| [cite_start]Pixhawk 6C Mini W/ PM06 [cite: 10] | [Holybro (Pixhawk)](https://holybro.com/products/pixhawk-6c-mini?variant=44511517442237) | ~$150.00 | |
-| [cite_start]Tekko32 F4 Metal 4in1 65A ESC (AM32) [cite: 11] | [Holybro (Tekko32)](https://holybro.com/products/tekko32-f4-metal-4in1-65a-esc-65a?srsltid=AfmBOoqXRtk8xXT7GmsBG70zYBHM0WAZP4TJ27Hu0P1xXjH18HDj_VdT) | ~$65.00 | |
-| [cite_start]Short Circuit Protector [cite: 12] | [Amazon (VIFLY)](https://www.amazon.com/VIFLY-ShortSaver-Electronic-Short-Circuit-Available/dp/B088TVVNVM) | ~$15.00 | |
-| [cite_start]Wiring (Pixhawk Compatible) [cite: 13] | [Amazon (Pre-Crimped)](https://www.amazon.com/Pre-Crimped-Connectors-Pixhawk2-Pixracer-Silicone/dp/B07PBHN7TM) | ~$15.00 | |
-| [cite_start]14 AWG Wiring [cite: 14, 15] | [Walmart (14AWG)](https://www.walmart.com/ip/LeeQinersw-14AWG-Flexible-Silicone-Wire-Cable-Black-10ft-Red-10ft-for-RC-Airplane-DIY/20252612218?utm_medium=feed&utm_source=chatgpt.com&oppcref=ce942a92-39de-458c-a59a-d12f6ac929cc) | [cite_start]~$15.00 | longer length & for motors [cite: 14] |
-| [cite_start]16 AWG Wiring [cite: 14, 16] | [Amazon (16AWG)](https://www.amazon.com/Silicone-Electrical-Cable%EF%BC%8810ft-Temperature-Resistant/dp/B0D93K21TN/ref=sr_1_4?crid=NSIPM0B967LF&dib=eyJ2IjoiMSJ9.NY2cniaikZdV-twRxajc0sYR9Iy5xMUOdkXm_Spy-OhDiO85NKPJj6SKLAOefd6vO2kZGe6Wy12nExoS0W3Xn7AxV2tjgUUQ9ibNa_vPUSRMF1ti3ALfJyxB514LTGEbwkhon9LHRlRKeJsBNFG_IllaKguh3Rb8bJNgQYhOH0uiqGAS8xm28oCjIEtjZeo_pUGKKJn_vPobaePTmG1XPcjFbRHVcZlpJtVsVljJksgt0N9-oyXJL1iyut4WhPqtD-uqTPSKMPb8_iU0grpxHSeO4ctlG5rMiG82zgHXpkM.sSIPyRphHfZ8hdNMtZh5V5_1MvXsd5gq_YdnmmZzKhs&dib_tag=se&keywords=16%2BGauge%2BSilicone%2BWire&qid=1782188154&s=industrial&sprefix=16%2Bgauge%2Bsilicone%2Bwire%2Cindustrial%2C173&sr=1-4&th=1) | [cite_start]~$15.00 | longer length & for motors [cite: 14] |
-| [cite_start]Screw Kit (M3) [cite: 17] | [Home Depot (M3)](https://www.homedepot.com/p/MYWISH-550-Piece-M3-Hex-Socket-Cap-Screws-and-Nuts-Kit-304-Stainless-Steel-DIN912-with-Washers-and-Wrenches-SF-TZ00085/337777102) | ~$15.00 | |
-| [cite_start]Screw + Standoff Kit M2.5 [cite: 18] | [Amazon (M2.5)](https://www.amazon.com/Standoff-Assortment-Motherboard-Standoffs-Raspberry/dp/B0FPMC9917/ref=sr_1_5?dib=eyJ2IjoiMSJ9.ASkhFdskGPfgmkJNnESQuiHL10QxWnT2_ysbxGgYLoaMrL58Y2RG6RiH1UPMcQSUKbhm-VogS5Mu5-f3W-iTsqBqYoYP3pr9pzvQ9v7DbMPgA9QncUYyBdv7SnOjY35XCGmQcxt8jalLFVxsg8RH7VOz_nZi70ja0mFJrz_pp2c5BpK0e10qIVe75K6so7HARh2KG0lZgkv-wkkBOfgpLjFroBjPAkiWo3VSd08JqV4.INUT8ArcWYBE8Q8KMkSE7TCPRtkWihl2NkiOWAp4hgk&dib_tag=se&keywords=m2.5+standoff&qid=1782191025&sr=8-5) | ~$10.00 | |
+
+## Running the tracker
+
+Run commands from this repository's root. The default is a camera dry run:
+
+```sh
+.venv/bin/python main.py
+```
+
+Connect the OAK-D Lite over USB. The program prints tracking status and calculated
+forward velocity/yaw rate about once per second; it does not open the UART in this
+mode. Set the desired following distance in meters with `--standoff` (default
+`2.0`):
+
+```sh
+.venv/bin/python main.py --standoff 2.5
+```
+
+Camera startup needs the DepthAI dependencies, a working USB connection, adequate
+power, and access to the YOLO model archive (cached locally or downloaded on first
+use). On the Pi, check the Linux USB permissions described in the
+[Luxonis USB deployment guide](https://docs.luxonis.com/hardware/platform/deploy/usb-deployment-guide/).
+Camera errors are reported by the program; the camera pipeline still needs
+verification on the actual OAK-D Lite/Pi.
+
+After configuring the dependencies, UART connection, flight controller, and control
+gains, live transmission is explicitly enabled with:
+
+```sh
+.venv/bin/python main.py --live
+```
+
+Live mode uses the existing `mavlink_interface.py` connection settings:
+`/dev/serial0`, `57600` baud, and source system ID `245`. The planned connection is
+the Pi UART to the Pixhawk 6C Mini's TELEM1 port. Port setup, matching MAVLink/baud
+settings, dependencies, and gain tuning remain separate setup work. Both gains in
+`navigation.py` are still `0.0`, so calculated movement commands currently remain
+zero even with a tracked target.
+
+## Enabling and stopping tracking with the transmitter
+
+The live controller expects **ArduCopter**. It observes the flight controller's
+armed state and GUIDED mode; it never arms, takes off, or changes flight modes.
+
+Use a spare transmitter switch configured on the flight controller as
+`RCx_OPTION = 55` (GUIDED), where `x` is the actual spare RC input channel. That
+channel must not also control a flight axis or the normal flight-mode selection.
+Keep the normal mode switch in a suitable pilot-controlled mode, such as Loiter,
+so lowering the auxiliary switch can return to that mode. A normal flight-mode
+switch with a GUIDED position is also supported; the program observes the resulting
+flight mode rather than reading a particular RC channel. These are configuration
+instructions for later; the program does not write RC parameters.
+[ArduPilot auxiliary mode switches](https://ardupilot.org/copter/docs/common-auxiliary-functions.html#mode-switches)
+
+1. Start the program with the aircraft outside GUIDED and wait for the program to
+   observe that state. Starting already in GUIDED does not enable tracking.
+2. Arm and take off manually in a suitable flight mode. Acquire the intended
+   person in the camera view.
+3. Switch into GUIDED to enable tracking. The program must observe both GUIDED and
+   the armed state before it can transmit following commands.
+4. Switch out of GUIDED to take control. The program stops sending setpoints once
+   it observes the mode change. Disarming also disables transmission.
+
+An auxiliary mode switch returns to the normal mode selection when lowered only
+if the aircraft is still in the mode selected by that auxiliary switch. Mode
+changes can be denied by ArduCopter, so verify the actual mode. To reset a tracking
+fault, leave GUIDED, wait for the program to report the disabled/ready state, then
+switch back into GUIDED; a quick out-and-back toggle can be missed between
+heartbeats.
+[ArduPilot switch behavior](https://ardupilot.org/copter/docs/common-auxiliary-functions.html#mode-switches)
+
+The program treats any observed transition into GUIDED as the enable request,
+including a transition requested by a ground station. It does not distinguish
+which device requested the mode change.
+
+## Command timing and failure behavior
+
+Camera processing runs separately from the control loop. Only the latest
+observation is retained, and live setpoints are sent at `10 Hz` while the controller
+is enabled. Capture timestamps, rather than processing time, determine freshness.
+
+| Event | Program response |
+| :--- | :--- |
+| Latest frame has no valid target | Request zero forward velocity and zero yaw rate on the next control tick. |
+| No new valid command for `0.5 s` | Expire the cached command and request zeros. |
+| Target remains lost for `2 s` | Latch following off; keep requesting zeros while still enabled in GUIDED. Target reappearance alone does not resume following. |
+| Flight-controller heartbeat absent for `3 s` | Suspend transmission and latch following off. If heartbeats resume in GUIDED after an engaged session, only zeros are allowed until a mode cycle. |
+| Camera worker fails | Exit. Restart the program and complete the mode cycle before following again. |
+| Ctrl+C or another shutdown | Attempt a final zero command only if an engaged session still has a fresh heartbeat and reports armed GUIDED; then close resources. |
+
+Zero commands request a stop; they do not confirm that the aircraft is hovering.
+ArduCopter also has its own configurable `GUID_TIMEOUT` for lost velocity commands
+(default `3 s`). The program's heartbeat timeout is separate from this flight
+controller setting. [ArduCopter Guided timeout](https://ardupilot.org/copter/docs/ac2_guidedmode.html)
+
+Target selection starts with a person detection and associates subsequent
+detections using proximity to the previous 3D position. This is not person
+recognition: crossing people, occlusion, or reacquisition can select another person.
+After 10 consecutive processed frames miss an acquired target, the visual tracker
+stops acquiring until reset. This can happen before the control loop's `2 s`
+timeout. In live mode, a new out-of-GUIDED/into-GUIDED cycle resets acquisition;
+in dry-run mode, restart the program. Each new live session discards observations
+captured before enabling. The coordinate conversion assumes a level camera facing
+forward along the aircraft.
+
+## Verification
+
+Run the automated checks without connecting flight hardware:
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+```
+
+These checks exercise software behavior with simulated inputs. OAK-D Lite/Pi
+hardware verification and ArduCopter SITL testing remain to be completed before
+flight use.
+
+## Parts
