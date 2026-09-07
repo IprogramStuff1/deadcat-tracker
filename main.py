@@ -122,8 +122,39 @@ class MavlinkSession:
         self.link.close()
 
 
+class VisionDiagnostics:
+    """Report observation throughput and age without treating 10 Hz ticks as FPS."""
+
+    def __init__(self):
+        self.last_time = None
+        self.last_count = 0
+        self.fps = 0.0
+
+    def describe(self, sample, now, standoff):
+        count = getattr(sample, "frame_count", self.last_count)
+        if self.last_time is None:
+            self.last_time, self.last_count = now, count
+        elif now - self.last_time >= 1.0:
+            self.fps = max(0, count - self.last_count) / (now - self.last_time)
+            self.last_time, self.last_count = now, count
+        if sample is None:
+            return f"vision_fps={self.fps:.1f} age_ms=none last_target_xyz_m=none"
+        age_ms = (now - sample.timestamp) * 1000
+        errors = sample.error_vector
+        if errors is None:
+            target = "last_target_xyz_m=none"
+        else:
+            target = (f"last_target_xyz_m=({errors[0] + standoff:.2f},"
+                      f"{errors[1]:.2f},{errors[2]:.2f}) "
+                      f"yaw_error_deg={math.degrees(errors[3]):.1f}")
+        return f"vision_fps={self.fps:.1f} age_ms={age_ms:.0f} {target}"
+
+
 def run(args, stop_event):
-    worker = VisionWorker(lambda: VisionSource(standoff=args.standoff))
+    snapshot_dir = getattr(args, "snapshot_dir", None)
+    if args.live and snapshot_dir is not None:
+        raise ValueError("Diagnostic snapshots are only available in dry-run mode")
+    worker = VisionWorker(lambda: VisionSource(standoff=args.standoff, snapshot_dir=snapshot_dir))
     gate = TrackingGate(COMMAND_TIMEOUT, HEARTBEAT_TIMEOUT, TARGET_LOSS_TIMEOUT)
     session = None
     worker.start()
@@ -152,6 +183,7 @@ def run(args, stop_event):
             LOG.info("Live: manually take off, then switch out of GUIDED and into GUIDED to enable")
         log_at = 0.0
         previous_status = None
+        diagnostics = VisionDiagnostics()
         while not stop_event.is_set():
             now = time.monotonic()
             previous_session = gate.session
@@ -174,7 +206,8 @@ def run(args, stop_event):
                 command = preview if preview is not None else (0.0, 0.0)
                 status = "dry run; target present" if preview is not None else "dry run; target missing or stale"
             if status != previous_status or now >= log_at:
-                LOG.info("%s | forward/yaw=%s", status, command)
+                LOG.info("%s | forward/yaw=%s | %s", status, command,
+                         diagnostics.describe(sample, now, args.standoff))
                 log_at = now + 1.0
                 previous_status = status
             # Skip missed periods; never burst old setpoints after a slow operation.
@@ -210,7 +243,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--live", action="store_true", help="enable RC-gated MAVLink commands on the existing UART")
     parser.add_argument("--standoff", type=positive_number, default=2.0, help="target distance in meters (default: 2)")
+    parser.add_argument("--snapshot-dir", help="dry run only: save up to 30 annotated camera images, at most one per second")
     args = parser.parse_args(argv)
+    if args.live and args.snapshot_dir:
+        parser.error("--snapshot-dir is only available without --live")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     stop_event = threading.Event()
     previous_handlers = {}

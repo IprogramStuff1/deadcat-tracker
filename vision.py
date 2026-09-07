@@ -1,13 +1,17 @@
 """Person tracking and an explicitly opened, nonblocking OAK camera source."""
 
 from contextlib import ExitStack
+from collections import OrderedDict
 from dataclasses import dataclass
+import logging
 import math
+from pathlib import Path
 import time
 
 
 PERSON_LABEL = 0  # COCO class used by the existing YOLO model.
 MODEL_SOURCE = "luxonis/yolov6-nano:r2-coco-512x288"
+LOG = logging.getLogger("tracker.vision")
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,89 @@ class VisionSample:
 
     timestamp: float
     error_vector: tuple[float, float, float, float] | None
+    frame_count: int = 0  # Accepted camera observations, independent of control ticks.
+
+
+def configure_model_and_alignment(pipeline, dai, parsing_network, rgb_cam, stereo):
+    """Use one model archive for inference and parsing, and align to its input."""
+    device = pipeline.getDefaultDevice()
+    if device.getPlatform() != dai.Platform.RVC2:
+        raise RuntimeError("This camera pipeline is configured for the OAK-D Lite (RVC2)")
+    description = dai.NNModelDescription(MODEL_SOURCE)
+    description.platform = device.getPlatformAsString()
+    archive = dai.NNArchive(dai.getModelFromZoo(description))
+    size = archive.getInputSize()
+    if size is None or len(size) != 2 or any(value <= 0 for value in size):
+        raise RuntimeError("Model archive has no valid image input width/height")
+    if len(archive.getConfig().model.inputs) != 1 or len(archive.getConfig().model.heads) != 1:
+        raise RuntimeError("Expected a single image input and detection head in the model")
+
+    # Stereo alignment needs an undistorted RGB reference. Request the model's
+    # precise input here, so the helper cannot choose a different crop/geometry.
+    inference_image = rgb_cam.requestOutput(
+        tuple(size), type=dai.ImgFrame.Type.BGR888p,
+        resizeMode=dai.ImgResizeMode.CROP, fps=30, enableUndistortion=True,
+    )
+    nn = pipeline.create(parsing_network).build(inference_image, nnSource=archive)
+    # depthai-nodes 0.6.0 only supplies the head to this parser. The full archive
+    # also supplies the blob's tensor dimensions, avoiding the RVC2 416x416 fallback.
+    # Do not combine setInputImageSize with archive/blob configuration.
+    nn.getParser(dai.node.DetectionParser).setNNArchive(archive)
+    # RVC2's StereoDepth performs alignment itself. Use the exact inference crop,
+    # resize and camera metadata rather than a separate 640x400 RGB viewpoint.
+    nn.passthrough.link(stereo.inputAlignTo)
+    LOG.info("Model input=%dx%d; parser uses full archive; depth aligned to inference image", *size)
+    return nn, tuple(size)
+
+
+class SnapshotWriter:
+    """Save a bounded set of same-frame RGB diagnostics without a GUI dependency."""
+
+    def __init__(self, directory, queue):
+        self.directory = Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        self.queue = queue
+        self.frames = OrderedDict()
+        self.next_save = 0.0
+        self.saved = 0
+        self.run_id = time.time_ns()
+
+    def capture(self, packet, tracked_object, now):
+        for frame in self.queue.tryGetAll():
+            key = (frame.getSequenceNum(), frame.getTimestamp())
+            self.frames[key] = frame
+        while len(self.frames) > 16:
+            self.frames.popitem(last=False)
+        if now < self.next_save or self.saved >= 30:
+            return
+        frame = self.frames.pop((packet.getSequenceNum(), packet.getTimestamp()), None)
+        if frame is None:
+            return  # Never draw boxes over a different frame.
+        import cv2  # imwrite works with the existing headless OpenCV package.
+
+        image = frame.getCvFrame().copy()
+        height, width = image.shape[:2]
+        for detection in packet.detections:
+            if detection.label != PERSON_LABEL:
+                continue
+            box = (detection.xmin, detection.ymin, detection.xmax, detection.ymax)
+            if not all(math.isfinite(value) for value in box):
+                continue
+            x1, y1, x2, y2 = (
+                int(max(0, min(1, value)) * (limit - 1))
+                for value, limit in zip(box, (width, height, width, height))
+            )
+            color = (0, 255, 0) if detection is tracked_object else (0, 180, 255)
+            cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
+            coords = _coordinates(detection.spatialCoordinates)
+            label = f"z={coords[2] / 1000:.2f}m" if coords else "invalid depth"
+            cv2.putText(image, label, (x1, max(15, y1 - 5)), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+        path = self.directory / f"frame-{self.run_id}-{packet.getSequenceNum():08d}.jpg"
+        if not cv2.imwrite(str(path), image):
+            raise RuntimeError(f"Could not write diagnostic image: {path}")
+        self.saved += 1
+        self.next_save = now + 1.0
+        LOG.info("Saved camera diagnostic %s (%d/30)", path, self.saved)
 
 
 def _coordinates(relative_coords):
@@ -130,7 +217,7 @@ class VisionSource:
     One worker thread should own this object, including calls to reset_tracker().
     """
 
-    def __init__(self, standoff: float = 2.0):
+    def __init__(self, standoff: float = 2.0, snapshot_dir=None):
         if not math.isfinite(standoff) or standoff < 0:
             raise ValueError("standoff must be finite and nonnegative")
         self.standoff = standoff
@@ -141,6 +228,13 @@ class VisionSource:
         self._dai = None
         self._reset_at = -math.inf
         self._last_capture_time = -math.inf
+        self._input_size = None
+        self._depth_queue = None
+        self._depth_transform = None
+        self._geometry_checked = False
+        self._frame_count = 0
+        self._snapshot_dir = snapshot_dir
+        self._snapshots = None
 
     def __enter__(self):
         if self._stack is not None:
@@ -163,28 +257,37 @@ class VisionSource:
                 mono_right = pipeline.create(dai.node.Camera).build(dai.CameraBoardSocket.CAM_C)
                 mono_left.requestOutput((640, 400)).link(stereo.left)
                 mono_right.requestOutput((640, 400)).link(stereo.right)
-                stereo.setDepthAlign(dai.CameraBoardSocket.CAM_A)
                 stereo.setLeftRightCheck(True)  # Required for RGB depth alignment on RVC2.
                 stereo.setSubpixel(True)
-                stereo.setOutputSize(640, 400)
 
-                nn = pipeline.create(ParsingNeuralNetwork).build(
-                    rgb_cam, nnSource=MODEL_SOURCE, fps=30
+                nn, input_size = configure_model_and_alignment(
+                    pipeline, dai, ParsingNeuralNetwork, rgb_cam, stereo
                 )
                 slc = pipeline.create(dai.node.SpatialLocationCalculator)
                 slc.setRunOnHost(True)
                 slc.inputConfig.setWaitForMessage(False)
-                # DepthAI v3 carries image transformations with detections and
-                # depth, so SLC maps their differing crop/output sizes itself.
                 nn.out.link(slc.inputDetections)
                 stereo.depth.link(slc.inputDepth)
                 spatial_queue = slc.outputDetections.createOutputQueue(maxSize=1, blocking=False)
+                # This is already host-side depth. Inspect its geometry once to
+                # catch a failed alignment before exposing control observations.
+                depth_queue = slc.passthroughDepth.createOutputQueue(maxSize=1, blocking=False)
+                snapshots = None
+                if self._snapshot_dir is not None:
+                    rgb_queue = nn.passthrough.createOutputQueue(maxSize=8, blocking=False)
+                    snapshots = SnapshotWriter(self._snapshot_dir, rgb_queue)
                 pipeline.start()
                 if not pipeline.isRunning():
                     raise RuntimeError("The camera pipeline stopped during startup")
                 self._pipeline = pipeline
                 self._queue = spatial_queue
                 self._dai = dai
+                self._input_size = input_size
+                self._depth_queue = depth_queue
+                self._depth_transform = None
+                self._geometry_checked = False
+                self._frame_count = 0
+                self._snapshots = snapshots
                 self._stack = stack.pop_all()
                 self.reset_tracker()
         except Exception as exc:
@@ -207,9 +310,26 @@ class VisionSource:
             raise RuntimeError("Open VisionSource using a with-block before reading")
         if not self._pipeline.isRunning():
             raise RuntimeError("OAK camera pipeline stopped; check its USB connection and power")
+        if self._depth_queue is not None:
+            depth = self._depth_queue.tryGet()
+            if depth is not None and not self._geometry_checked:
+                self._depth_transform = depth.getTransformation()
         packet = self._queue.tryGet()
         if packet is None:
             return None
+        if self._input_size is not None and not self._geometry_checked:
+            if self._depth_transform is None:
+                return None  # Wait for the first aligned depth metadata as well.
+            transform = packet.getTransformation()
+            if (tuple(transform.getSize()) != self._input_size
+                    or tuple(self._depth_transform.getSize()) != self._input_size
+                    or not self._depth_transform.isEqualTransformation(transform)):
+                raise RuntimeError(
+                    "Depth/detection geometry does not match the model input; "
+                    "camera observations withheld. Check the inference alignment link."
+                )
+            self._geometry_checked = True
+            LOG.info("Verified depth/detection geometry: %dx%d", *self._input_size)
         # getTimestamp() uses the host-synchronised DepthAI monotonic clock.
         # Convert via age because its epoch need not equal Python's monotonic epoch.
         now = time.monotonic()
@@ -232,11 +352,15 @@ class VisionSource:
         error_vector = None
         if tracked_object is not None:
             error_vector = camera_to_drone(tracked_object.spatialCoordinates, self.standoff)
-        return VisionSample(timestamp=timestamp, error_vector=error_vector)
+        self._frame_count += 1
+        if self._snapshots is not None:
+            self._snapshots.capture(packet, tracked_object, now)
+        return VisionSample(timestamp=timestamp, error_vector=error_vector, frame_count=self._frame_count)
 
     def __exit__(self, exc_type, exc_value, traceback):
         stack, self._stack = self._stack, None
         self._pipeline = self._queue = self._dai = None
+        self._depth_queue = self._depth_transform = self._snapshots = None
         self.reset_tracker()
         if stack is not None:
             return stack.__exit__(exc_type, exc_value, traceback)

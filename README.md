@@ -9,9 +9,11 @@ Run commands from this repository's root. The default is a camera dry run:
 .venv/bin/python main.py
 ```
 
-Connect the OAK-D Lite over USB. The program prints tracking status and calculated
-forward velocity/yaw rate about once per second; it does not open the UART in this
-mode. Set the desired following distance in meters with `--standoff` (default
+Connect the OAK-D Lite over USB. The program prints tracking status, calculated
+forward velocity/yaw rate, observation FPS, frame age, and the last target position
+about once per second; it does not open the UART in this mode. Position and yaw
+errors remain visible even when navigation gains are zero. Set the desired
+following distance in meters with `--standoff` (default
 `2.0`):
 
 ```sh
@@ -24,6 +26,59 @@ use). On the Pi, check the Linux USB permissions described in the
 [Luxonis USB deployment guide](https://docs.luxonis.com/hardware/platform/deploy/usb-deployment-guide/).
 Camera errors are reported by the program; the camera pipeline still needs
 verification on the actual OAK-D Lite/Pi.
+
+### Checking detection geometry and performance on the Pi
+
+The pipeline loads the full model archive into the detection parser, including
+its input tensor dimensions (512 wide by 288 high for the current model). It
+requests an undistorted inference image at that size and uses the neural network's
+passthrough image as `StereoDepth.inputAlignTo`. This is the RVC2 alignment path;
+there is no independent 640x400 depth-output resize. This follows the approach in
+[Luxonis's spatial detection implementation](https://github.com/luxonis/depthai-core/blob/main/src/pipeline/node/SpatialDetectionNetwork.cpp).
+The first depth/detection transformations must match each other and the model
+dimensions before the program accepts observations. Warnings are not suppressed.
+
+Run without snapshots first to measure the normal camera-processing load:
+
+```sh
+.venv/bin/python main.py
+```
+
+Look for `Model input=512x288` followed by
+`Verified depth/detection geometry: 512x288`. The repeated 416x416 fallback and
+transformation-remapping warnings should be gone. If the geometry check fails,
+the program stops and reports it instead of passing those coordinates to control.
+
+- `vision_fps`: accepted spatial observations per second, including frames with
+  no target. This is independent of the 10 Hz control loop; the first interval
+  shows zero while the measurement starts.
+- `age_ms`: age of the most recent observation at logging time. It should remain
+  comfortably below the existing 500 ms expiry limit. A stopped stream makes age
+  grow and FPS fall to zero.
+- `last_target_xyz_m`: forward, right and down coordinates in metres. Compare
+  the first number with a measured forward distance from the camera while the
+  person is centred and stationary. These are the last observation's values;
+  a stale status means they must not be treated as current.
+- `yaw_error_deg`: target angle to the right (positive) or left (negative).
+
+To inspect bounding boxes on a Pi without a desktop display, optionally run:
+
+```sh
+.venv/bin/python main.py --snapshot-dir camera-check
+```
+
+This saves up to 30 annotated JPEGs per run, at most one per second, with unique
+names. Open or copy them from `camera-check`. Green marks the tracked person;
+yellow marks other person detections, including candidates when tracking is lost.
+The `z` label is forward depth in metres. Images are matched to detections by both
+sequence number and capture timestamp; unmatched images are skipped. Check boxes
+with the person near the centre and near the image edges. Restart after prolonged
+target loss as described below. Snapshot capture uses the existing headless OpenCV
+package and is disabled in live mode. It adds image transfer and disk-write work,
+so compare performance using the run without snapshots.
+
+No camera measurements or before/after timing results from the Pi are bundled
+with this change; the checks above are the remaining hardware validation.
 
 After configuring the dependencies, UART connection, flight controller, and control
 gains, live transmission is explicitly enabled with:
