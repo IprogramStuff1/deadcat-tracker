@@ -11,6 +11,8 @@ import time
 
 PERSON_LABEL = 0  # COCO class used by the existing YOLO model.
 MODEL_SOURCE = "luxonis/yolov6-nano:r2-coco-512x288"
+MIN_DEPTH_M = 0.3
+MAX_DEPTH_M = 10.0
 LOG = logging.getLogger("tracker.vision")
 
 
@@ -25,6 +27,7 @@ class VisionSample:
     timestamp: float
     error_vector: tuple[float, float, float, float] | None
     frame_count: int = 0  # Accepted camera observations, independent of control ticks.
+    tracking_status: str = "unknown"
 
 
 def configure_model_and_alignment(pipeline, dai, parsing_network, rgb_cam, stereo):
@@ -127,7 +130,8 @@ class DesignatedTracker:
     miss the target, acquisition stays disabled until an explicit reset/designation.
     """
 
-    def __init__(self, label=None, max_distance_meters=1.5, max_missed=10):
+    def __init__(self, label=None, max_distance_meters=1.5, max_missed=10,
+                 min_depth=MIN_DEPTH_M, max_depth=MAX_DEPTH_M):
         if not math.isfinite(max_distance_meters) or max_distance_meters <= 0:
             raise ValueError("max_distance_meters must be finite and positive")
         if not isinstance(max_missed, int) or max_missed < 1:
@@ -135,6 +139,13 @@ class DesignatedTracker:
         self._configured_label = label
         self.max_distance_squared = (max_distance_meters * 1000.0) ** 2
         self.max_missed = max_missed
+        if not (math.isfinite(min_depth) and math.isfinite(max_depth)
+                and 0 < min_depth < max_depth <= 65.535):
+            raise ValueError("Depth limits must satisfy 0 < min_depth < max_depth <= 65.535 metres")
+        self.min_depth_mm = round(min_depth * 1000)
+        self.max_depth_mm = round(max_depth * 1000)
+        if not 0 < self.min_depth_mm < self.max_depth_mm:
+            raise ValueError("Depth limits must remain positive and distinct at millimetre precision")
         self.reset()
 
     def reset(self):
@@ -143,18 +154,22 @@ class DesignatedTracker:
         self.position = None
         self.missed = 0
         self.lost = False
+        self.status = "waiting_for_person"
 
     def designate(self, detection):
         """Explicitly lock onto a valid detection selected by the caller."""
         coords = _coordinates(getattr(detection, "spatialCoordinates", None))
         if coords is None:
             raise ValueError("Cannot designate a detection without valid spatial coordinates")
+        if not self.min_depth_mm < coords[2] < self.max_depth_mm:
+            raise ValueError("Cannot designate a detection outside the configured depth range")
         if self._configured_label is not None and detection.label != self._configured_label:
             raise ValueError("Detection does not match the configured target class")
         self.label = detection.label
         self.position = coords
         self.missed = 0
         self.lost = False
+        self.status = "tracking"
         return detection
 
     def update(self, detections):
@@ -164,15 +179,26 @@ class DesignatedTracker:
         best_detection = None
         best_distance_squared = self.max_distance_squared
         best_confidence = -1.0
+        counts = dict(candidates=0, invalid_depth=0, out_of_range=0,
+                      invalid_confidence=0, position_jump=0)
         for detection in detections:
             if self.label is not None and detection.label != self.label:
                 continue
+            counts["candidates"] += 1
             coords = _coordinates(getattr(detection, "spatialCoordinates", None))
+            if coords is None:
+                counts["invalid_depth"] += 1
+                continue
+            if not self.min_depth_mm < coords[2] < self.max_depth_mm:
+                counts["out_of_range"] += 1
+                continue
             try:
                 confidence = float(getattr(detection, "confidence", 0.0))
             except (TypeError, ValueError, OverflowError):
+                counts["invalid_confidence"] += 1
                 continue
-            if coords is None or not math.isfinite(confidence) or not 0 <= confidence <= 1:
+            if not math.isfinite(confidence) or not 0 <= confidence <= 1:
+                counts["invalid_confidence"] += 1
                 continue
             if self.position is None:
                 if confidence > best_confidence:
@@ -181,6 +207,8 @@ class DesignatedTracker:
             else:
                 deltas = (current - previous for current, previous in zip(coords, self.position))
                 distance_squared = sum(delta * delta for delta in deltas)
+                if distance_squared >= self.max_distance_squared:
+                    counts["position_jump"] += 1
                 if distance_squared < best_distance_squared:
                     best_distance_squared = distance_squared
                     best_detection = detection
@@ -192,6 +220,11 @@ class DesignatedTracker:
             self.missed += 1
             if self.missed >= self.max_missed:
                 self.lost = True
+        state = "locked_after_misses" if self.lost else "no_match"
+        self.status = f"{state} missed={self.missed} " + " ".join(
+            f"{key}={value}" for key, value in counts.items())
+        if self.lost:
+            LOG.warning("Tracker %s; acquisition requires reset. Counts describe the last evaluated frame.", self.status)
         return None
 
 
@@ -217,11 +250,12 @@ class VisionSource:
     One worker thread should own this object, including calls to reset_tracker().
     """
 
-    def __init__(self, standoff: float = 2.0, snapshot_dir=None):
+    def __init__(self, standoff: float = 2.0, snapshot_dir=None,
+                 min_depth=MIN_DEPTH_M, max_depth=MAX_DEPTH_M):
         if not math.isfinite(standoff) or standoff < 0:
             raise ValueError("standoff must be finite and nonnegative")
         self.standoff = standoff
-        self.tracker = DesignatedTracker(label=PERSON_LABEL)
+        self.tracker = DesignatedTracker(label=PERSON_LABEL, min_depth=min_depth, max_depth=max_depth)
         self._stack = None
         self._pipeline = None
         self._queue = None
@@ -266,6 +300,11 @@ class VisionSource:
                 slc = pipeline.create(dai.node.SpatialLocationCalculator)
                 slc.setRunOnHost(True)
                 slc.inputConfig.setWaitForMessage(False)
+                slc.initialConfig.setDepthThresholds(self.tracker.min_depth_mm, self.tracker.max_depth_mm)
+                slc.initialConfig.setCalculationAlgorithm(dai.SpatialLocationCalculatorAlgorithm.MEDIAN)
+                slc.initialConfig.setBoundingBoxScaleFactor(0.5)
+                LOG.info("Depth filter: %.3f–%.3f m; median over central half-width/half-height of detection",
+                         self.tracker.min_depth_mm / 1000, self.tracker.max_depth_mm / 1000)
                 nn.out.link(slc.inputDetections)
                 stereo.depth.link(slc.inputDepth)
                 spatial_queue = slc.outputDetections.createOutputQueue(maxSize=1, blocking=False)
@@ -355,7 +394,8 @@ class VisionSource:
         self._frame_count += 1
         if self._snapshots is not None:
             self._snapshots.capture(packet, tracked_object, now)
-        return VisionSample(timestamp=timestamp, error_vector=error_vector, frame_count=self._frame_count)
+        return VisionSample(timestamp=timestamp, error_vector=error_vector,
+                            frame_count=self._frame_count, tracking_status=self.tracker.status)
 
     def __exit__(self, exc_type, exc_value, traceback):
         stack, self._stack = self._stack, None

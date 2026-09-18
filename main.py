@@ -147,14 +147,17 @@ class VisionDiagnostics:
             target = (f"last_target_xyz_m=({errors[0] + standoff:.2f},"
                       f"{errors[1]:.2f},{errors[2]:.2f}) "
                       f"yaw_error_deg={math.degrees(errors[3]):.1f}")
-        return f"vision_fps={self.fps:.1f} age_ms={age_ms:.0f} {target}"
+        tracking = getattr(sample, "tracking_status", "unknown")
+        return f"vision_fps={self.fps:.1f} age_ms={age_ms:.0f} {target} tracker={tracking}"
 
 
 def run(args, stop_event):
     snapshot_dir = getattr(args, "snapshot_dir", None)
     if args.live and snapshot_dir is not None:
         raise ValueError("Diagnostic snapshots are only available in dry-run mode")
-    worker = VisionWorker(lambda: VisionSource(standoff=args.standoff, snapshot_dir=snapshot_dir))
+    worker = VisionWorker(lambda: VisionSource(
+        standoff=args.standoff, snapshot_dir=snapshot_dir,
+        min_depth=getattr(args, "min_depth", 0.3), max_depth=getattr(args, "max_depth", 10.0)))
     gate = TrackingGate(COMMAND_TIMEOUT, HEARTBEAT_TIMEOUT, TARGET_LOSS_TIMEOUT)
     session = None
     worker.start()
@@ -244,7 +247,11 @@ def main(argv=None):
     parser.add_argument("--live", action="store_true", help="enable RC-gated MAVLink commands on the existing UART")
     parser.add_argument("--standoff", type=positive_number, default=2.0, help="target distance in meters (default: 2)")
     parser.add_argument("--snapshot-dir", help="dry run only: save up to 30 annotated camera images, at most one per second")
+    parser.add_argument("--min-depth", type=positive_number, default=0.3, help="minimum accepted target depth in metres (default: 0.3)")
+    parser.add_argument("--max-depth", type=positive_number, default=10.0, help="maximum accepted target depth in metres (default: 10)")
     args = parser.parse_args(argv)
+    if not 0 < round(args.min_depth * 1000) < round(args.max_depth * 1000) <= 65535:
+        parser.error("depth limits must be positive, increasing at millimetre precision, and at most 65.535 m")
     if args.live and args.snapshot_dir:
         parser.error("--snapshot-dir is only available without --live")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")

@@ -160,6 +160,37 @@ in dry-run mode, restart the program. Each new live session discards observation
 captured before enabling. The coordinate conversion assumes a level camera facing
 forward along the aircraft.
 
+## Depth troubleshooting
+
+The default accepted camera-forward depth is strictly between `0.3` and `10`
+metres. These are application filters, not a guarantee of camera accuracy.
+`--min-depth` and `--max-depth` configure the bounds in metres (rounded to
+millimetres). The depth calculator excludes pixels outside these bounds and
+uses the median of the central half-width and half-height of each detection
+box to reduce background contamination. The tracker independently rejects
+invalid or out-of-range spatial coordinates before acquiring or matching a target.
+
+For an indoor test with a person about one metre away:
+
+```sh
+python main.py --min-depth 0.3 --max-depth 5 --snapshot-dir snapshots
+```
+
+This is a camera-only dry run. Inspect the images to check that the detection
+box covers the person and that its reported depth is plausible. Range filtering
+can still leave incorrect readings inside the allowed interval; it does not
+establish the cause of a bad reading or repair camera calibration.
+
+Logs include `tracker=tracking` or rejection counts for the latest evaluated
+frame: `candidates` counts detections of the selected class, `invalid_depth`
+counts unusable coordinates, `out_of_range` counts spatial depths outside the
+bounds, `invalid_confidence` counts malformed confidence values, and
+`position_jump` counts detections outside the 1.5 m association gate.
+The calculator may output invalid coordinates when no usable depth pixels
+remain, so pixel filtering can appear as `invalid_depth` in these logs.
+`locked_after_misses` means acquisition has latched off; its counts remain
+those of the last evaluated frame until reset. Restart a dry run to reset it.
+
 ## Verification
 
 Run the automated checks without connecting flight hardware:
