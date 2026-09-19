@@ -88,7 +88,7 @@ gains, live transmission is explicitly enabled with:
 ```
 
 Live mode uses the existing `mavlink_interface.py` connection settings:
-`/dev/serial0`, `57600` baud, and source system ID `245`. The planned connection is
+`/dev/ttyAMA0`, `57600` baud, and source system ID `245`. The planned connection is
 the Pi UART to the Pixhawk 6C Mini's TELEM1 port. Port setup, matching MAVLink/baud
 settings, dependencies, and gain tuning remain separate setup work. Both gains in
 `navigation.py` are still `0.0`, so calculated movement commands currently remain

@@ -5,7 +5,7 @@ import time
 
 from pymavlink import mavutil
 
-SERIAL_DEVICE = "/dev/serial0"
+SERIAL_DEVICE = "/dev/ttyAMA0"
 SERIAL_BAUD = 57600
 SOURCE_SYSTEM_ID = 245
 
@@ -13,9 +13,9 @@ FOLLOW_FRAME = mavutil.mavlink.MAV_FRAME_BODY_NED
 TYPE_MASK = 1479
 
 link = mavutil.mavlink_connection(
-    "/dev/serial0",
-    baud=57600,
-    source_system=245,
+    SERIAL_DEVICE,
+    baud=SERIAL_BAUD,
+    source_system=SOURCE_SYSTEM_ID,
 )
 
 heartbeat = link.wait_heartbeat(timeout=10)
