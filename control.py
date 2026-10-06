@@ -22,6 +22,57 @@ def command_from_sample(sample, now: float, timeout: float):
     return float(forward), float(yaw)
 
 
+class DisarmedTestGate:
+    """Stream bench-test setpoints in any mode with a fresh disarmed heartbeat.
+
+    Arming or heartbeat loss disables transmission until the program restarts.
+    Missing targets produce zeros without the flight gate's target-loss latch.
+    """
+
+    def __init__(self, command_timeout=0.5, heartbeat_timeout=3.0):
+        for value in (command_timeout, heartbeat_timeout):
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError("Timeouts must be finite and positive")
+        self.command_timeout = command_timeout
+        self.heartbeat_timeout = heartbeat_timeout
+        self.last_heartbeat = None
+        self.armed = True  # Unknown state must never authorize transmission.
+        self.fault = None
+        self.status = "disarmed test; waiting for a disarmed heartbeat"
+
+    def latch(self, reason):
+        if self.fault is None:
+            self.fault = reason
+        self.status = f"disarmed test stopped: {self.fault}; restart the program to retry"
+
+    def observe_heartbeat(self, now, *, guided, armed):
+        if (self.last_heartbeat is not None
+                and now - self.last_heartbeat > self.heartbeat_timeout):
+            self.latch("heartbeat lost")
+        self.last_heartbeat = now
+        self.armed = armed
+        if armed:
+            self.latch("aircraft reports armed")
+
+    def can_send(self, now):
+        if (self.last_heartbeat is not None
+                and now - self.last_heartbeat > self.heartbeat_timeout):
+            self.latch("heartbeat lost")
+        return (self.fault is None and not self.armed
+                and self.last_heartbeat is not None
+                and 0 <= now - self.last_heartbeat <= self.heartbeat_timeout)
+
+    def command(self, sample, now):
+        if not self.can_send(now):
+            return None
+        command = command_from_sample(sample, now, self.command_timeout)
+        if command is None:
+            self.status = "disarmed test; streaming zeros; target missing or stale"
+            return 0.0, 0.0
+        self.status = "disarmed test; streaming target commands"
+        return command
+
+
 class TrackingGate:
     """Acquire control on an observed non-GUIDED -> armed GUIDED transition.
 

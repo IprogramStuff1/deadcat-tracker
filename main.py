@@ -1,4 +1,4 @@
-"""Run camera preview, or opt in to RC-switched ArduCopter following."""
+"""Run camera preview, disarmed transmission testing, or RC-switched following."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import signal
 import threading
 import time
 
-from control import TrackingGate, command_from_sample
+from control import DisarmedTestGate, TrackingGate, command_from_sample
 from vision import VisionSource
 
 LOG = logging.getLogger("tracker")
@@ -84,6 +84,7 @@ class MavlinkSession:
         self.link = interface.link
         self.mavutil = interface.mavutil
         self.system = self.link.target_system
+        self.sent_count = 0
         # pymavlink can leave target_component at 0 (broadcast) after heartbeat.
         # Heartbeat monitoring must match the autopilot's actual source component.
         self.component = self.mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
@@ -117,6 +118,7 @@ class MavlinkSession:
 
     def send(self, command):
         self.interface.follow_vision_command(*command)
+        self.sent_count += 1
 
     def close(self):
         self.link.close()
@@ -152,17 +154,24 @@ class VisionDiagnostics:
 
 
 def run(args, stop_event):
+    disarmed_test = getattr(args, "disarmed_test", False)
+    if args.live and disarmed_test:
+        raise ValueError("--live and --disarmed-test cannot be combined")
+    transmit = args.live or disarmed_test
     snapshot_dir = getattr(args, "snapshot_dir", None)
-    if args.live and snapshot_dir is not None:
+    if transmit and snapshot_dir is not None:
         raise ValueError("Diagnostic snapshots are only available in dry-run mode")
     worker = VisionWorker(lambda: VisionSource(
         standoff=args.standoff, snapshot_dir=snapshot_dir,
         min_depth=getattr(args, "min_depth", 0.3), max_depth=getattr(args, "max_depth", 10.0)))
-    gate = TrackingGate(COMMAND_TIMEOUT, HEARTBEAT_TIMEOUT, TARGET_LOSS_TIMEOUT)
+    gate = (DisarmedTestGate(COMMAND_TIMEOUT, HEARTBEAT_TIMEOUT) if disarmed_test
+            else TrackingGate(COMMAND_TIMEOUT, HEARTBEAT_TIMEOUT, TARGET_LOSS_TIMEOUT))
     session = None
     worker.start()
     try:
-        LOG.info("Starting camera (%s)", "live requested" if args.live else "dry run; no MAVLink")
+        mode = ("disarmed transmission test" if disarmed_test else
+                "live requested" if args.live else "dry run; no MAVLink")
+        LOG.info("Starting camera (%s)", mode)
         deadline = time.monotonic() + CAMERA_STARTUP_TIMEOUT
         while not worker.ready.wait(0.1):
             if stop_event.is_set():
@@ -174,8 +183,8 @@ def run(args, stop_event):
             raise RuntimeError(f"Camera startup failed: {error}") from error
         if stop_event.is_set():
             return 0
-        if args.live:
-            # Importing this module opens UART. Never import it for preview/help/tests.
+        if transmit:
+            # Importing this module opens UART. Keep preview/help hardware-free.
             interface = importlib.import_module("mavlink_interface")
             try:
                 session = MavlinkSession(interface)
@@ -183,20 +192,26 @@ def run(args, stop_event):
                 interface.link.close()
                 raise
             session.observe(interface.heartbeat, gate, time.monotonic())
-            LOG.info("Live: manually take off, then switch out of GUIDED and into GUIDED to enable")
+            if disarmed_test:
+                LOG.info("Disarmed test: streaming in any flight mode while disarmed; "
+                         "arming or heartbeat loss disables sends until restart. "
+                         "tx_packets counts local sends, not flight-controller acknowledgements")
+            else:
+                LOG.info("Live: manually take off, then switch out of GUIDED and into GUIDED to enable")
         log_at = 0.0
         previous_status = None
         diagnostics = VisionDiagnostics()
         while not stop_event.is_set():
             now = time.monotonic()
-            previous_session = gate.session
+            previous_session = gate.session if args.live else None
             if session:
                 session.poll(gate, now)
-                if gate.session != previous_session:
+                if args.live and gate.session != previous_session:
                     worker.reset_tracker()
             sample, error = worker.snapshot()
             if error:
-                gate.latch("camera failed; restart the program and cycle GUIDED")
+                gate.latch("camera failed" if disarmed_test else
+                           "camera failed; restart the program and cycle GUIDED")
                 raise RuntimeError(f"Camera failed: {error}") from error
             now = time.monotonic()
             if session:
@@ -209,7 +224,8 @@ def run(args, stop_event):
                 command = preview if preview is not None else (0.0, 0.0)
                 status = "dry run; target present" if preview is not None else "dry run; target missing or stale"
             if status != previous_status or now >= log_at:
-                LOG.info("%s | forward/yaw=%s | %s", status, command,
+                LOG.info("%s | forward/yaw=%s | tx_packets=%d | %s", status, command,
+                         session.sent_count if session else 0,
                          diagnostics.describe(sample, now, args.standoff))
                 log_at = now + 1.0
                 previous_status = status
@@ -244,7 +260,10 @@ def positive_number(value):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--live", action="store_true", help="enable RC-gated MAVLink commands on the existing UART")
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument("--live", action="store_true", help="enable RC-gated MAVLink commands on the existing UART")
+    modes.add_argument("--disarmed-test", action="store_true",
+                       help="stream MAVLink while disarmed in any mode; arming or heartbeat loss requires restart")
     parser.add_argument("--standoff", type=positive_number, default=2.0, help="target distance in meters (default: 2)")
     parser.add_argument("--snapshot-dir", help="dry run only: save up to 30 annotated camera images, at most one per second")
     parser.add_argument("--min-depth", type=positive_number, default=0.3, help="minimum accepted target depth in metres (default: 0.3)")
@@ -252,8 +271,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if not 0 < round(args.min_depth * 1000) < round(args.max_depth * 1000) <= 65535:
         parser.error("depth limits must be positive, increasing at millimetre precision, and at most 65.535 m")
-    if args.live and args.snapshot_dir:
-        parser.error("--snapshot-dir is only available without --live")
+    if (args.live or args.disarmed_test) and args.snapshot_dir:
+        parser.error("--snapshot-dir is only available in dry-run mode")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     stop_event = threading.Event()
     previous_handlers = {}

@@ -90,9 +90,45 @@ gains, live transmission is explicitly enabled with:
 Live mode uses the existing `mavlink_interface.py` connection settings:
 `/dev/ttyAMA0`, `57600` baud, and source system ID `245`. The planned connection is
 the Pi UART to the Pixhawk 6C Mini's TELEM1 port. Port setup, matching MAVLink/baud
-settings, dependencies, and gain tuning remain separate setup work. Both gains in
-`navigation.py` are still `0.0`, so calculated movement commands currently remain
-zero even with a tracked target.
+settings, dependencies, and gain tuning remain separate setup work. Commands use
+the gains and output limits in `navigation.py` in both transmission modes.
+
+### Sending commands while disarmed
+
+For a bench transmission test on the Pi, stop any other copy of the tracker that
+uses the UART, keep the aircraft disarmed, and run:
+
+```sh
+.venv/bin/python main.py --disarmed-test
+```
+
+This is a separate alternative to `--live`; the two flags cannot be combined.
+It opens the same UART and sends camera-derived forward velocity/yaw-rate
+setpoints at `10 Hz` after receiving a valid disarmed ArduCopter heartbeat.
+GUIDED and a mode-switch cycle are not required. It never arms the aircraft or
+changes its flight mode. Run only one transmitting instance at a time.
+`--standoff`, `--min-depth`, and `--max-depth` work as usual; snapshots remain
+available only in the camera-only dry run.
+
+- Fresh valid target: send the calculated command using the normal gains/limits.
+- Missing, invalid, or older-than-`0.5 s` target data: keep sending zeros. This test
+  does not apply the live controller's two-second target-loss latch. The visual
+  tracker's ten-missed-frame lock still applies; restart the program to reacquire
+  after `locked_after_misses` (zeros continue in the meantime).
+- An armed heartbeat, including at startup: stop all transmission until restart,
+  even if the aircraft subsequently disarms.
+- Heartbeat absent for more than `3 s`: stop all transmission until restart,
+  even if heartbeats return. State changes are detected from received heartbeats;
+  the program cannot detect arming instantly between them. Keep the aircraft
+  disarmed throughout the bench test and stop the test before arming.
+- Camera failure: exit and close the connection.
+- Ctrl+C: attempt a final zero setpoint only while the test still has a fresh
+  disarmed heartbeat and no latched fault, then close the connection.
+
+Logs are labelled `disarmed test` and include `forward/yaw` and `tx_packets`.
+The counter increases after each successful local send call; it does not confirm
+flight-controller receipt or acceptance. This mode tests transmission, not flight
+response. The normal `--live` armed/GUIDED gate is unchanged.
 
 ## Enabling and stopping tracking with the transmitter
 
