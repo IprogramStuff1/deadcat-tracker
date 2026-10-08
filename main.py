@@ -11,13 +11,12 @@ import threading
 import time
 
 from control import DisarmedTestGate, TrackingGate, command_from_sample
-from vision import VisionSource
+from vision import TARGET_LOSS_TIMEOUT, VisionSource
 
 LOG = logging.getLogger("tracker")
 SEND_HZ = 10.0
 COMMAND_TIMEOUT = 0.5
 HEARTBEAT_TIMEOUT = 3.0
-TARGET_LOSS_TIMEOUT = 2.0
 CAMERA_STARTUP_TIMEOUT = 60.0
 
 

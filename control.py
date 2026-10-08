@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 
 from navigation import SimpleProportionalControl
+from vision import TARGET_LOSS_TIMEOUT
 
 
 def command_from_sample(sample, now: float, timeout: float):
@@ -81,7 +82,7 @@ class TrackingGate:
     """
 
     def __init__(self, command_timeout=0.5, heartbeat_timeout=3.0,
-                 target_loss_timeout=2.0):
+                 target_loss_timeout=TARGET_LOSS_TIMEOUT):
         for value in (command_timeout, heartbeat_timeout, target_loss_timeout):
             if not math.isfinite(value) or value <= 0:
                 raise ValueError("Timeouts must be finite and positive")

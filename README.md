@@ -112,9 +112,9 @@ available only in the camera-only dry run.
 
 - Fresh valid target: send the calculated command using the normal gains/limits.
 - Missing, invalid, or older-than-`0.5 s` target data: keep sending zeros. This test
-  does not apply the live controller's two-second target-loss latch. The visual
-  tracker's ten-missed-frame lock still applies; restart the program to reacquire
-  after `locked_after_misses` (zeros continue in the meantime).
+  does not apply the live controller's 1.5-second target-loss latch. The visual
+  tracker's 1.5-second loss window still applies; restart the program to reacquire
+  after `locked_after_timeout` (zeros continue in the meantime).
 - An armed heartbeat, including at startup: stop all transmission until restart,
   even if the aircraft subsequently disarms.
 - Heartbeat absent for more than `3 s`: stop all transmission until restart,
@@ -176,7 +176,7 @@ is enabled. Capture timestamps, rather than processing time, determine freshness
 | :--- | :--- |
 | Latest frame has no valid target | Request zero forward velocity and zero yaw rate on the next control tick. |
 | No new valid command for `0.5 s` | Expire the cached command and request zeros. |
-| Target remains lost for `2 s` | Latch following off; keep requesting zeros while still enabled in GUIDED. Target reappearance alone does not resume following. |
+| Target remains lost for `1.5 s` | Latch following off; keep requesting zeros while still enabled in GUIDED. Target reappearance alone does not resume following. |
 | Flight-controller heartbeat absent for `3 s` | Suspend transmission and latch following off. If heartbeats resume in GUIDED after an engaged session, only zeros are allowed until a mode cycle. |
 | Camera worker fails | Exit. Restart the program and complete the mode cycle before following again. |
 | Ctrl+C or another shutdown | Attempt a final zero command only if an engaged session still has a fresh heartbeat and reports armed GUIDED; then close resources. |
@@ -189,9 +189,13 @@ controller setting. [ArduCopter Guided timeout](https://ardupilot.org/copter/doc
 Target selection starts with a person detection and associates subsequent
 detections using proximity to the previous 3D position. This is not person
 recognition: crossing people, occlusion, or reacquisition can select another person.
-After 10 consecutive processed frames miss an acquired target, the visual tracker
-stops acquiring until reset. This can happen before the control loop's `2 s`
-timeout. In live mode, a new out-of-GUIDED/into-GUIDED cycle resets acquisition;
+The visual tracker allows reacquisition for `1.5 s` after the last valid target's
+capture timestamp, independent of frame rate. At that deadline it stops acquiring
+until reset, even if the next frame contains a target. Missing or invalid targets
+produce zero-motion setpoints on the next control tick throughout this window;
+the window never authorizes motion from a missing-target frame. If frames stop
+arriving, the last command still expires after `0.5 s`. In live mode, a new
+out-of-GUIDED/into-GUIDED cycle resets acquisition;
 in dry-run mode, restart the program. Each new live session discards observations
 captured before enabling. The coordinate conversion assumes a level camera facing
 forward along the aircraft.
@@ -224,7 +228,7 @@ bounds, `invalid_confidence` counts malformed confidence values, and
 `position_jump` counts detections outside the 1.5 m association gate.
 The calculator may output invalid coordinates when no usable depth pixels
 remain, so pixel filtering can appear as `invalid_depth` in these logs.
-`locked_after_misses` means acquisition has latched off; its counts remain
+`locked_after_timeout` means acquisition has latched off; its counts remain
 those of the last evaluated frame until reset. Restart a dry run to reset it.
 
 ## Verification

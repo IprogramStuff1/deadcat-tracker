@@ -13,6 +13,7 @@ PERSON_LABEL = 0  # COCO class used by the existing YOLO model.
 MODEL_SOURCE = "luxonis/yolov6-nano:r2-coco-512x288"
 MIN_DEPTH_M = 0.3
 MAX_DEPTH_M = 10.0
+TARGET_LOSS_TIMEOUT = 1.5
 LOG = logging.getLogger("tracker.vision")
 
 
@@ -126,19 +127,20 @@ def _coordinates(relative_coords):
 class DesignatedTracker:
     """Acquire by confidence, then associate the nearest same-class detection.
 
-    This is positional association, not person identification. Once enough frames
-    miss the target, acquisition stays disabled until an explicit reset/designation.
+    This is positional association, not person identification. Once the target
+    loss timeout elapses, acquisition stays disabled until a reset/designation.
     """
 
-    def __init__(self, label=None, max_distance_meters=1.5, max_missed=10,
+    def __init__(self, label=None, max_distance_meters=1.5,
+                 target_loss_timeout=TARGET_LOSS_TIMEOUT,
                  min_depth=MIN_DEPTH_M, max_depth=MAX_DEPTH_M):
         if not math.isfinite(max_distance_meters) or max_distance_meters <= 0:
             raise ValueError("max_distance_meters must be finite and positive")
-        if not isinstance(max_missed, int) or max_missed < 1:
-            raise ValueError("max_missed must be a positive integer")
+        if not math.isfinite(target_loss_timeout) or target_loss_timeout <= 0:
+            raise ValueError("target_loss_timeout must be finite and positive")
         self._configured_label = label
         self.max_distance_squared = (max_distance_meters * 1000.0) ** 2
-        self.max_missed = max_missed
+        self.target_loss_timeout = target_loss_timeout
         if not (math.isfinite(min_depth) and math.isfinite(max_depth)
                 and 0 < min_depth < max_depth <= 65.535):
             raise ValueError("Depth limits must satisfy 0 < min_depth < max_depth <= 65.535 metres")
@@ -152,12 +154,16 @@ class DesignatedTracker:
         """Forget the target and permit acquisition of the configured class."""
         self.label = self._configured_label
         self.position = None
+        self.last_target_at = None
         self.missed = 0
         self.lost = False
         self.status = "waiting_for_person"
 
-    def designate(self, detection):
+    def designate(self, detection, timestamp=None):
         """Explicitly lock onto a valid detection selected by the caller."""
+        timestamp = time.monotonic() if timestamp is None else timestamp
+        if not math.isfinite(timestamp):
+            raise ValueError("Target timestamp must be finite")
         coords = _coordinates(getattr(detection, "spatialCoordinates", None))
         if coords is None:
             raise ValueError("Cannot designate a detection without valid spatial coordinates")
@@ -167,13 +173,17 @@ class DesignatedTracker:
             raise ValueError("Detection does not match the configured target class")
         self.label = detection.label
         self.position = coords
+        self.last_target_at = timestamp
         self.missed = 0
         self.lost = False
         self.status = "tracking"
         return detection
 
-    def update(self, detections):
+    def update(self, detections, timestamp=None):
         """Return a valid target, or None for a missing/invalid/latched-lost target."""
+        timestamp = time.monotonic() if timestamp is None else timestamp
+        if not math.isfinite(timestamp):
+            raise ValueError("Target timestamp must be finite")
         if self.lost:
             return None
         best_detection = None
@@ -213,14 +223,17 @@ class DesignatedTracker:
                     best_distance_squared = distance_squared
                     best_detection = detection
 
-        if best_detection is not None:
-            return self.designate(best_detection)
+        # Check elapsed capture time before accepting a returning target: neither
+        # high FPS nor a stalled stream may shorten/extend the recovery window.
+        if (self.last_target_at is not None
+                and timestamp - self.last_target_at >= self.target_loss_timeout):
+            self.lost = True
+        if best_detection is not None and not self.lost:
+            return self.designate(best_detection, timestamp)
         # Do not latch loss before a target has ever been acquired.
         if self.position is not None:
             self.missed += 1
-            if self.missed >= self.max_missed:
-                self.lost = True
-        state = "locked_after_misses" if self.lost else "no_match"
+        state = "locked_after_timeout" if self.lost else "no_match"
         self.status = f"{state} missed={self.missed} " + " ".join(
             f"{key}={value}" for key, value in counts.items())
         if self.lost:
@@ -387,7 +400,7 @@ class VisionSource:
         if timestamp < self._reset_at or capture_time <= self._last_capture_time:
             return None
         self._last_capture_time = capture_time
-        tracked_object = self.tracker.update(packet.detections)
+        tracked_object = self.tracker.update(packet.detections, timestamp=timestamp)
         error_vector = None
         if tracked_object is not None:
             error_vector = camera_to_drone(tracked_object.spatialCoordinates, self.standoff)
